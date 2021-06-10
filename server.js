@@ -52,13 +52,15 @@ fastify.get('/', async (request, reply) => {
   standingOrdersQuery.data.standingOrders
     .filter(i => !i.cancelledAt && i.standingOrderRecurrence)
     .forEach(i => {
+      let dateObj = dayjs(i.standingOrderRecurrence.startDate)
+
       dates.push({
         productId,
         uid: i.paymentOrderUid,
-        recurrenceRule: rrule(i.standingOrderRecurrence),
-        start: formatIcsDate(i.standingOrderRecurrence.startDate),
-        end: formatIcsDate(i.standingOrderRecurrence.startDate, true),
-        title: `${payees[i.payeeUid]} (${getSymbolFromCurrency(i.amount.currency) + (i.amount.minorUnits / 100).toFixed(2)})`,
+        recurrenceRule: getRrule(i.standingOrderRecurrence),
+        start: dateObj.format('YYYY, MM, DD').split(','),
+        end: dateObj.add(1, 'day').format('YYYY, MM, DD').split(','),
+        title: `${payees[i.payeeUid]} ${getAmount(i.amount)}`,
         description: `Ref: ${i.reference} (Standing Order)`
       })
     })
@@ -68,20 +70,44 @@ fastify.get('/', async (request, reply) => {
   directDebitsQuery.data.mandates
     .filter(i => !i.cancelled && i.lastPayment)
     .forEach(i => {
+      let dateObj = dayjs(i.lastPayment.lastDate)
+
       dates.push({
         productId,
         uid: i.uid,
-        start: formatIcsDate(i.lastPayment.lastDate),
-        end: formatIcsDate(i.lastPayment.lastDate, true),
-        title: `${i.originatorName} (${getSymbolFromCurrency(i.lastPayment.lastAmount.currency) + (i.lastPayment.lastAmount.minorUnits / 100).toFixed(2)})`,
+        start: dateObj.format('YYYY, MM, DD').split(','),
+        end: dateObj.add(1, 'day').format('YYYY, MM, DD').split(','),
+        title: `${i.originatorName} ${getAmount(i.lastPayment.lastAmount)}`,
         description: `Ref: ${i.reference} (Direct Debit)`
       })
     })
 
+  const directDebitsUpcomingQuery = await client.feedItem.getFeedItemsBetween({
+    accountUid: account.accountUid,
+    categoryUid: account.defaultCategory,
+    minTransactionTimestamp: dayjs().toISOString(),
+    maxTransactionTimestamp: dayjs().add(10, 'day').toISOString()
+  }) || []
+
+  directDebitsUpcomingQuery.data.feedItems 
+    .filter(i => i.source === 'DIRECT_DEBIT' && i.status === 'UPCOMING')
+    .forEach(i => {
+        let dateObj = dayjs(i.transactionTime)
+
+        dates.push({
+          productId,
+          uid: i.feedItemUid,
+          start: dateObj.format('YYYY, MM, DD, HH, MM').split(','),
+          end: dateObj.add(30, 'minute').format('YYYY, MM, DD, HH, MM').split(','),
+          title: `Upcoming: ${i.counterPartyName} ${getAmount(i.amount)}`,
+          description: `Ref: ${i.reference} (Direct Debit)`
+        })
+      })
+
   return ics.createEvents(dates).value
 })
 
-const rrule = r => {
+const getRrule = r => {
   let rule = []
 
   if (r.frequency) rule.push(`FREQ=${r.frequency}`)
@@ -91,12 +117,8 @@ const rrule = r => {
   return rule.join(';')
 }
 
-const formatIcsDate = (ts, nextDay) => {
-  let dateObj = dayjs(ts)
-
-  if (nextDay) dateObj.add(1, 'day')
-
-  return [dateObj.format('YYYY'), dateObj.format('MM'), dateObj.format('DD')]
+const getAmount = amount => {
+  return `(${getSymbolFromCurrency(amount.currency) + (amount.minorUnits / 100).toFixed(2)})`
 }
 
 const start = async () => {
