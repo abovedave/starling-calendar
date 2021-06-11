@@ -78,7 +78,7 @@ fastify.get('/', async (request, reply) => {
         start: dateObj.format('YYYY, MM, DD').split(','),
         end: dateObj.add(1, 'day').format('YYYY, MM, DD').split(','),
         title: `${i.originatorName} ${formatAmount(i.lastPayment.lastAmount)}`,
-        description: `Ref: ${i.reference} (Direct Debit)`
+        description: `Ref: ${i.reference} (Settled Direct Debit)`
       })
     })
 
@@ -100,7 +100,7 @@ fastify.get('/', async (request, reply) => {
           start: dateObj.format('YYYY, MM, DD').split(','),
           end: dateObj.add(1, 'day').format('YYYY, MM, DD').split(','),
           title: `${i.counterPartyName} ${formatAmount(i.amount)}`,
-          description: `Planned payment. Ref: ${i.reference} (Direct Debit)`
+          description: `Ref: ${i.reference} (Upcoming Direct Debit)`
         })
       })
 
