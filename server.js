@@ -4,10 +4,8 @@ const Starling = require('starling-developer-sdk')
 const ics = require('ics')
 
 const dayjs = require('dayjs')
-const customParseFormat = require('dayjs/plugin/customParseFormat')
-dayjs.extend(customParseFormat)
-
-const productId = "StarlingCalendar"
+const utc = require('dayjs/plugin/utc')
+dayjs.extend(utc)
 
 const getSymbolFromCurrency = require('currency-symbol-map')
 
@@ -42,45 +40,33 @@ fastify.get('/', async (request, reply) => {
     payees[i.payeeUid] = i.payeeName
   })
 
-  let dates = []
-
   const standingOrdersQuery = await client.payment.listStandingOrders({
     accountUid: account.accountUid,
     categoryUid: account.defaultCategory
   }) || []
 
-  standingOrdersQuery.data.standingOrders
+  const standingOrdersDates = standingOrdersQuery.data.standingOrders
     .filter(i => !i.cancelledAt && i.standingOrderRecurrence)
-    .forEach(i => {
-      let dateObj = dayjs(i.standingOrderRecurrence.startDate)
-
-      dates.push({
-        productId,
-        uid: i.paymentOrderUid,
-        recurrenceRule: getRrule(i.standingOrderRecurrence),
-        start: dateObj.format('YYYY, MM, DD').split(','),
-        end: dateObj.add(1, 'day').format('YYYY, MM, DD').split(','),
-        title: `${payees[i.payeeUid]} ${formatAmount(i.amount)}`,
-        description: `Ref: ${i.reference} (Standing Order)`
-      })
-    })
+    .map(i => formatEvent({
+      uid: i.paymentOrderUid,
+      name: payees[i.payeeUid],
+      timestamp: i.standingOrderRecurrence.startDate,
+      amount: i.amount,
+      reference: i.reference,
+      recurrenceRule: i.standingOrderRecurrence
+    }, 'SO'))
 
   const directDebitsQuery = await client.mandate.listMandates() || []
 
-  directDebitsQuery.data.mandates
+  const directDebitsDates = directDebitsQuery.data.mandates
     .filter(i => !i.cancelled && i.lastPayment)
-    .forEach(i => {
-      let dateObj = dayjs(i.lastPayment.lastDate)
-
-      dates.push({
-        productId,
-        uid: i.uid,
-        start: dateObj.format('YYYY, MM, DD').split(','),
-        end: dateObj.add(1, 'day').format('YYYY, MM, DD').split(','),
-        title: `${i.originatorName} ${formatAmount(i.lastPayment.lastAmount)}`,
-        description: `Ref: ${i.reference} (Settled Direct Debit)`
-      })
-    })
+    .map(i => formatEvent({
+      uid: i.uid,
+      name: i.originatorName,
+      timestamp: i.lastPayment.lastDate,
+      amount: i.lastPayment.lastAmount,
+      reference: i.reference
+    }, 'DD_SETTLED'))
 
   const directDebitsUpcomingQuery = await client.feedItem.getFeedItemsBetween({
     accountUid: account.accountUid,
@@ -89,23 +75,45 @@ fastify.get('/', async (request, reply) => {
     maxTransactionTimestamp: dayjs().add(10, 'day').toISOString()
   }) || []
 
-  directDebitsUpcomingQuery.data.feedItems 
+  const directDebitsUpcomingDates = directDebitsUpcomingQuery.data.feedItems 
     .filter(i => i.source === 'DIRECT_DEBIT' && i.status === 'UPCOMING')
-    .forEach(i => {
-        let dateObj = dayjs(i.transactionTime)
+    .map(i => formatEvent({
+      uid: i.feedItemUid,
+      name: i.counterPartyName,
+      timestamp: i.transactionTime,
+      amount: i.amount,
+      reference: i.reference
+    }, 'DD_UPCOMING'))
 
-        dates.push({
-          productId,
-          uid: i.feedItemUid,
-          start: dateObj.format('YYYY, MM, DD').split(','),
-          end: dateObj.add(1, 'day').format('YYYY, MM, DD').split(','),
-          title: `${i.counterPartyName} ${formatAmount(i.amount)}`,
-          description: `Ref: ${i.reference} (Upcoming Direct Debit)`
-        })
-      })
-
-  return ics.createEvents(dates).value
+  return ics.createEvents([
+    ...directDebitsDates,
+    ...directDebitsUpcomingDates,
+    ...standingOrdersDates
+  ]).value
 })
+
+const formatEvent = (event, type) => {
+  let dateObj = dayjs(event.timestamp).utc()
+
+  let eventType = {
+    'SO': 'Standing Order',
+    'DD_UPCOMING': 'Upcoming Direct Debit',
+    'DD_SETTLED': 'Settled Direct Debit'
+  }
+
+  let icsObj = {
+    productId: "StarlingCalendar",
+    uid: event.uid,
+    start: dateObj.local().format('YYYY, MM, DD').split(','),
+    end: dateObj.local().add(1, 'day').format('YYYY, MM, DD').split(','),
+    title: `${event.name} ${formatAmount(event.amount)}`,
+    description: `Ref: ${event.reference} (${eventType[type]})`
+  }
+
+  if (event.recurrenceRule) icsObj.recurrenceRule = getRrule(event.recurrenceRule)
+
+  return icsObj
+}
 
 const getRrule = r => {
   let rule = []
