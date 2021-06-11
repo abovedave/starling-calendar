@@ -100,7 +100,7 @@ fastify.get('/', async (request, reply) => {
           start: dateObj.format('YYYY, MM, DD').split(','),
           end: dateObj.add(1, 'day').format('YYYY, MM, DD').split(','),
           title: `${i.counterPartyName} ${formatAmount(i.amount)}`,
-          description: `Ref: ${i.reference} (Direct Debit)`
+          description: `Planned payment. Ref: ${i.reference} (Direct Debit)`
         })
       })
 
