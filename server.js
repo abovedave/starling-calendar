@@ -60,7 +60,7 @@ fastify.get('/', async (request, reply) => {
         recurrenceRule: getRrule(i.standingOrderRecurrence),
         start: dateObj.format('YYYY, MM, DD').split(','),
         end: dateObj.add(1, 'day').format('YYYY, MM, DD').split(','),
-        title: `${payees[i.payeeUid]} ${getAmount(i.amount)}`,
+        title: `${payees[i.payeeUid]} ${formatAmount(i.amount)}`,
         description: `Ref: ${i.reference} (Standing Order)`
       })
     })
@@ -77,7 +77,7 @@ fastify.get('/', async (request, reply) => {
         uid: i.uid,
         start: dateObj.format('YYYY, MM, DD').split(','),
         end: dateObj.add(1, 'day').format('YYYY, MM, DD').split(','),
-        title: `${i.originatorName} ${getAmount(i.lastPayment.lastAmount)}`,
+        title: `${i.originatorName} ${formatAmount(i.lastPayment.lastAmount)}`,
         description: `Ref: ${i.reference} (Direct Debit)`
       })
     })
@@ -97,9 +97,9 @@ fastify.get('/', async (request, reply) => {
         dates.push({
           productId,
           uid: i.feedItemUid,
-          start: dateObj.format('YYYY, MM, DD, HH, MM').split(','),
-          end: dateObj.add(30, 'minute').format('YYYY, MM, DD, HH, MM').split(','),
-          title: `Upcoming: ${i.counterPartyName} ${getAmount(i.amount)}`,
+          start: dateObj.format('YYYY, MM, DD').split(','),
+          end: dateObj.add(1, 'day').format('YYYY, MM, DD').split(','),
+          title: `${i.counterPartyName} ${formatAmount(i.amount)}`,
           description: `Ref: ${i.reference} (Direct Debit)`
         })
       })
@@ -117,7 +117,7 @@ const getRrule = r => {
   return rule.join(';')
 }
 
-const getAmount = amount => {
+const formatAmount = amount => {
   return `(${getSymbolFromCurrency(amount.currency) + (amount.minorUnits / 100).toFixed(2)})`
 }
 
